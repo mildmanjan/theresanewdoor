@@ -136,6 +136,16 @@
             renderer.outputEncoding = THREE.sRGBEncoding;
             document.body.appendChild(renderer.domElement);
             
+
+            // After creating the renderer, add:
+            if (isMobile()) {
+            renderer.setPixelRatio(1); // Force 1:1 pixel ratio on mobile
+            // Optional: render at half resolution
+            renderer.setSize(window.innerWidth * 0.5, window.innerHeight * 0.5);
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            } 
+
             // Create camera
             const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 2, 10);  // Positioned much higher above the scene
