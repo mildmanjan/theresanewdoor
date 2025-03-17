@@ -207,9 +207,13 @@
             const audioElement = document.getElementById('background-audio');
             
             // Create audio-responsive particles
-            const particleCount = 3000;
+            const particleCount = isMobile() ? 500 : 3000;
             const particleSystem = createAudioParticles(particleCount);
             scene.add(particleSystem);
+
+            function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
             
             // Create audio-responsive particle system
             function createAudioParticles(count) {
