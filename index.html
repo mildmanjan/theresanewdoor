@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Animated Doors Scene</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>There's a New Door</h2>
+        <p>Lines Interlacing, Shivering Frame.</p>
+        <p>Use your mouse to navigate:</p>
+        <ul>
+            <li>Left-click + drag to rotate</li>
+            <li>Right-click + drag to pan</li>
+            <li>Scroll to zoom</li>
+        </ul>
+        <p><strong>Click anywhere to listen</strong></p>
+    </div>
+    
+    <!-- Audio element (hidden) -->
+    <audio id="background-audio" src="audio/Theres A New Door mix 3.mp3" preload="auto"></audio>
+    
+    <script>
+        // Load Three.js library
+        const threeScript = document.createElement('script');
+        threeScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js';
+        threeScript.onload = loadRGBELoader;
+        document.head.appendChild(threeScript);
+        
+        // Load RGBE Loader for HDR
+        function loadRGBELoader() {
+            const rgbeScript = document.createElement('script');
+            rgbeScript.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/RGBELoader.js';
+            rgbeScript.onload = loadGLTFLoader;
+            document.head.appendChild(rgbeScript);
+        }
+        
+        // Then load the GLTF loader
+        function loadGLTFLoader() {
+            const gltfScript = document.createElement('script');
+            gltfScript.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js';
+            gltfScript.onload = loadOrbitControls;
+            document.head.appendChild(gltfScript);
+        }
+        
+        // Then load the OrbitControls
+        function loadOrbitControls() {
+            const controlsScript = document.createElement('script');
+            controlsScript.src = 'https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js';
+            controlsScript.onload = initScene;
+            document.head.appendChild(controlsScript);
+        }
+        
+        // Initialize the scene
+        function initScene() {
+            // Create scene
+            const scene = new THREE.Scene();
+            
+            // Load HDR environment map
+            const rgbeLoader = new THREE.RGBELoader();
+            rgbeLoader.setPath('environment/');
+            rgbeLoader.load('theresanewdoorB.hdr', function(texture) {
+                console.log("HDR environment map loaded successfully");
+                
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+                
+                // Set scene background to HDR
+                scene.background = texture;
+                
+                // Set environment map for materials
+                scene.environment = texture;
+                
+                // Apply environment map to all existing materials
+                scene.traverse((object) => {
+                    if (object.isMesh && object.material) {
+                        if (Array.isArray(object.material)) {
+                            object.material.forEach(material => {
+                                material.envMap = texture;
+                                material.envMapIntensity = 1.0;
+                                material.needsUpdate = true;
+                            });
+                        } else {
+                            object.material.envMap = texture;
+                            object.material.envMapIntensity = 1.0;
+                            object.material.needsUpdate = true;
+                        }
+                    }
+                });
+            }, undefined, function(error) {
+                console.error('Error loading HDR environment map:', error);
+                
+                // Fallback to previous background color and fog if HDR fails to load
+                scene.background = new THREE.Color(0x111122);
+                const fogColor = new THREE.Color(0x222233);
+                scene.fog = new THREE.FogExp2(fogColor, 0.01);
+            });
+            
+            // Add fog (will be visible if HDR doesn't fully cover the scene)
+            const fogColor = new THREE.Color(0x222233);
+            scene.fog = new THREE.FogExp2(fogColor, 0.01);
+            
+            // Create renderer with HDR support
+            const renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                // Enable high dynamic range output
+                powerPreference: "high-performance"
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            // Enable tone mapping for HDR
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            // Enable physically correct lighting
+            renderer.physicallyCorrectLights = true;
+            // Enable HDR output encoding
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.body.appendChild(renderer.domElement);
+            
+            // Create camera
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 10);  // Positioned much higher above the scene
+            camera.lookAt(0, 0, -10);  // Still looking at the same lower point
+            
+            // Create orbit controls with constraints
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // Prevent scrolling below floor level
+            controls.maxPolarAngle = Math.PI * 0.5; // Limit to 90 degrees (horizontal)
+            controls.minPolarAngle = 0.1; // Prevent looking straight up
+            
+            // Set distance limits
+            controls.minDistance = 5; // Prevent getting too close
+            controls.maxDistance = 50; // Prevent getting too far
+            
+            // Enable smooth panning
+            controls.enablePan = true;
+            controls.panSpeed = 0.5;
+            
+            // Set floor height (adjust based on your scene)
+            const floorY = -5; // Match this to your floor's y-position
+            
+            // Add a minimum height constraint to camera position
+            const minCameraHeight = 0.5; // Minimum height above floor
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(10, 10, 15);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Add colored point lights
+            const colors = [
+                0xFF5722, // Red-orange
+                0x2196F3, // Blue
+                0xFFC107, // Gold
+                0x9C27B0  // Purple
+            ];
+            
+            const lightRadius = 8;
+            for (let i = 0; i < 4; i++) {
+                const angle = i * (Math.PI / 2);
+                const x = lightRadius * Math.cos(angle);
+                const y = lightRadius * Math.sin(angle);
+                
+                const pointLight = new THREE.PointLight(colors[i], 1, 30);
+                pointLight.position.set(x, y, 3);
+                scene.add(pointLight);
+            }
+            
+            // Load the model
+            const loader = new THREE.GLTFLoader();
+            
+            // Animation variables
+            let mixer;
+            const clock = new THREE.Clock();
+            let lastDebugTime = -1; // For periodic debugging
+            
+            // Audio Visualization Setup
+            let audioContext, analyser, dataArray;
+            const fftSize = 256;
+            const audioElement = document.getElementById('background-audio');
+            
+            // Create audio-responsive particles
+            const particleCount = 3000;
+            const particleSystem = createAudioParticles(particleCount);
+            scene.add(particleSystem);
+            
+            // Create audio-responsive particle system
+            function createAudioParticles(count) {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(count * 3);
+                const colors = new Float32Array(count * 3);
+                const sizes = new Float32Array(count);
+                
+                // Create particles in a spherical formation around the scene
+                for (let i = 0; i < count; i++) {
+                    const i3 = i * 3;
+                    
+                    // Random position on a sphere using spherical coordinates
+                    const radius = 20 + Math.random() * 20; // Between 20-40 units from center
+                    const theta = Math.random() * Math.PI * 2; // Random angle around Y axis
+                    const phi = Math.acos((Math.random() * 2) - 1); // Random angle from Y axis
+                    
+                    positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+                    positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+                    positions[i3 + 2] = radius * Math.cos(phi);
+                    
+                    // Random colors with blue/purple dominant
+                    colors[i3] = Math.random() * 0.5;     // R: lower value for blue tint
+                    colors[i3 + 1] = Math.random() * 0.3; // G: lower value for blue tint
+                    colors[i3 + 2] = 0.5 + Math.random() * 0.5; // B: higher value
+                    
+                    // Random sizes (will be affected by audio)
+                    sizes[i] = Math.random() * 2;
+                }
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+                
+                // Create particle material with custom shader
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0.0 },
+                        audioStrength: { value: 0.0 }
+                    },
+                    vertexShader: `
+                        attribute float size;
+                        attribute vec3 color;
+                        varying vec3 vColor;
+                        uniform float time;
+                        uniform float audioStrength;
+                        
+                        void main() {
+                            vColor = color;
+                            
+                            // Apply some movement based on position and time
+                            vec3 pos = position;
+                            float moveFactor = sin(time * 0.5 + position.x * 0.1 + position.y * 0.1 + position.z * 0.1) * 0.5;
+                            
+                            // Apply audio reactivity
+                            float audioFactor = 1.0 + audioStrength * 3.0;
+                            
+                            // Calculate particle size with time and audio variation
+                            float particleSize = size * audioFactor * (0.8 + 0.4 * sin(time + position.x + position.y));
+                            
+                            // Set position with subtle movement
+                            vec4 mvPosition = modelViewMatrix * vec4(pos * (1.0 + moveFactor * 0.1), 1.0);
+                            gl_PointSize = particleSize * (300.0 / -mvPosition.z);
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        varying vec3 vColor;
+                        
+                        void main() {
+                            // Create circular particles with soft edge
+                            float r = 0.5 * length(gl_PointCoord - vec2(0.5, 0.5));
+                            float intensity = 1.0 - smoothstep(0.3, 0.5, r);
+                            
+                            gl_FragColor = vec4(vColor, intensity);
+                        }
+                    `,
+                    transparent: true,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                return new THREE.Points(geometry, material);
+            }
+            
+            // Setup audio analyzer when audio starts
+            function setupAudioAnalyzer() {
+                if (analyser) return; // Already setup
+                
+                try {
+                    // Create audio context
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create analyzer
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = fftSize;
+                    
+                    // Connect audio element to analyzer
+                    const source = audioContext.createMediaElementSource(audioElement);
+                    source.connect(analyser);
+                    analyser.connect(audioContext.destination);
+                    
+                    // Create data array for frequency data
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    
+                    console.log("Audio analyzer setup complete");
+                } catch (error) {
+                    console.error("Error setting up audio analyzer:", error);
+                }
+            }
+            
+            // Function to play audio and setup analyzer
+            function playAudio() {
+                // Resume audio context if it's suspended (browser autoplay policy)
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                // Setup analyzer if not already set up
+                if (!analyser) {
+                    setupAudioAnalyzer();
+                }
+                
+                // Play audio if paused
+                if (audioElement.paused) {
+                    audioElement.play()
+                        .then(() => {
+                            console.log("Audio playback started");
+                        })
+                        .catch(error => {
+                            console.error("Audio playback failed:", error);
+                        });
+                }
+            }
+            
+            // Add lightning effect
+            function createLightning() {
+                // Create a bright flash light
+                const lightningLight = new THREE.PointLight(0xffffff, 0, 100);
+                lightningLight.position.set(
+                    Math.random() * 40 - 20,  // Random X position
+                    Math.random() * 40 - 20,  // Random Y position
+                    Math.random() * 20 + 10   // Random height above the scene
+                );
+                scene.add(lightningLight);
+                
+                // Flash duration and intensity
+                const flashDuration = 100 + Math.random() * 200;  // 100-300ms
+                const flashIntensity = 3 + Math.random() * 7;     // Intensity 3-10
+                
+                // Flash on
+                lightningLight.intensity = flashIntensity;
+                
+                // Flash off after duration
+                setTimeout(() => {
+                    lightningLight.intensity = 0;
+                    
+                    // Remove the light after a bit to clean up
+                    setTimeout(() => {
+                        scene.remove(lightningLight);
+                    }, 1000);
+                }, flashDuration);
+                
+                // Optional second flash for realism
+                if (Math.random() > 0.5) {
+                    setTimeout(() => {
+                        lightningLight.intensity = flashIntensity * 0.5;
+                        setTimeout(() => {
+                            lightningLight.intensity = 0;
+                        }, flashDuration * 0.5);
+                    }, flashDuration + 50);
+                }
+            }
+            
+            // Schedule lightning at random intervals
+            function scheduleLightning() {
+                // Random interval between 3-10 seconds
+                const nextLightning = 3000 + Math.random() * 7000;
+                
+                setTimeout(() => {
+                    createLightning();
+                    scheduleLightning();  // Schedule the next lightning
+                }, nextLightning);
+            }
+            
+            // Start lightning
+            scheduleLightning();
+            
+            // Display GLB loading message
+            console.log("Attempting to load GLB model from 'blender_scene.glb'...");
+            
+            // Check if the loaders are ready
+            if (!THREE.GLTFLoader) {
+                console.error("THREE.GLTFLoader is not available! Make sure the script is properly loaded.");
+            } else {
+                console.log("THREE.GLTFLoader is ready");
+            }
+            
+            loader.load(
+                'blender_scene.glb',
+                function(gltf) {
+                    // Success callback
+                    scene.add(gltf.scene);
+                    console.log("Model loaded successfully!");
+                    
+                    // Position the model lower on the Y axis
+                    gltf.scene.position.y = -5;
+                    
+                    // Set up animations if present
+                    if (gltf.animations && gltf.animations.length) {
+                        console.log(`Model has ${gltf.animations.length} animations`);
+                        
+                        // Create the animation mixer directly on the scene
+                        mixer = new THREE.AnimationMixer(gltf.scene);
+                        
+                        // Debug each animation clip
+                        gltf.animations.forEach((clip, index) => {
+                            console.log(`Animation ${index}: ${clip.name || 'unnamed'}, Duration: ${clip.duration}s`);
+                            
+                            // Try to play each animation
+                            try {
+                                const action = mixer.clipAction(clip);
+                                action.setLoop(THREE.LoopRepeat);
+                                action.clampWhenFinished = false;
+                                action.timeScale = 1.0;
+                                action.play();
+                                console.log(`Started playing animation: ${clip.name || 'unnamed'}`);
+                            } catch (error) {
+                                console.error(`Error playing animation ${index}:`, error);
+                            }
+                        });
+                        
+                        // Log the active mixer and its state
+                        console.log("Animation mixer created:", mixer);
+                        console.log("Animation mixer has active actions:", mixer._actions.length > 0);
+                    } else {
+                        // Try to find any animatable objects manually
+                        console.log("No animations directly in the GLTF. Examining scene objects...");
+                        
+                        let animatableObjects = [];
+                        gltf.scene.traverse((object) => {
+                            if (object.isMesh) {
+                                console.log(`Found mesh: ${object.name}`);
+                                animatableObjects.push(object);
+                            }
+                        });
+                        
+                        if (animatableObjects.length > 0) {
+                            console.log(`Found ${animatableObjects.length} potential animatable objects`);
+                            // Create a mixer anyway for manual animations
+                            mixer = new THREE.AnimationMixer(gltf.scene);
+                        } else {
+                            console.log("No animatable objects found in the model");
+                        }
+                    }
+                },
+                function(xhr) {
+                    // Progress callback
+                    if (xhr.lengthComputable) {
+                        const percent = Math.round((xhr.loaded / xhr.total) * 100);
+                        console.log(`Loading: ${percent}%`);
+                    }
+                },
+                function(error) {
+                    // Error callback
+                    console.error('Error loading model:', error);
+                }
+            );
+            
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // Update time for shader animations
+                const elapsedTime = clock.getElapsedTime();
+                
+                // Update audio reactivity if audio is playing
+                if (analyser && dataArray) {
+                    try {
+                        // Get frequency data
+                        analyser.getByteFrequencyData(dataArray);
+                        
+                        // Calculate average frequency amplitude (simple approach)
+                        let sum = 0;
+                        for (let i = 0; i < dataArray.length; i++) {
+                            sum += dataArray[i];
+                        }
+                        const average = sum / dataArray.length / 255; // Normalize to 0-1
+                        
+                        // Update particle system with audio data
+                        if (particleSystem && particleSystem.material.uniforms) {
+                            particleSystem.material.uniforms.time.value = elapsedTime;
+                            particleSystem.material.uniforms.audioStrength.value = average;
+                            
+                            // Add subtle rotation to particle system based on audio
+                            particleSystem.rotation.y += 0.001 + average * 0.002;
+                            particleSystem.rotation.x += 0.0005 + average * 0.001;
+                        }
+                        
+                        // Modulate fog density based on bass frequencies (first few bins)
+                        let bassSum = 0;
+                        for (let i = 0; i < Math.min(5, dataArray.length); i++) {
+                            bassSum += dataArray[i];
+                        }
+                        const bassAverage = bassSum / Math.min(5, dataArray.length) / 255;
+                        
+                        // Change fog density based on bass
+                        scene.fog.density = 0.01 + bassAverage * 0.01;
+                    } catch (error) {
+                        console.error("Error updating audio reactivity:", error);
+                    }
+                }
+                
+                // Update animation mixer if it exists
+                if (mixer) {
+                    try {
+                        const delta = clock.getDelta();
+                        mixer.update(delta);
+                        
+                        // Debug animation state every 5 seconds
+                        if (Math.floor(elapsedTime) % 5 === 0 && Math.floor(elapsedTime) !== lastDebugTime) {
+                            lastDebugTime = Math.floor(elapsedTime);
+                            console.log("Animation mixer status:", {
+                                time: elapsedTime.toFixed(2),
+                                activeActions: mixer._actions.length,
+                                actionStates: mixer._actions.map(a => ({
+                                    name: a._clip.name || 'unnamed',
+                                    isRunning: a.isRunning(),
+                                    timeScale: a.timeScale,
+                                    time: a.time.toFixed(2)
+                                }))
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Error updating animation mixer:", error);
+                    }
+                }
+                
+                // Update controls
+                controls.update();
+                
+                // Enforce minimum height constraint
+                if (camera.position.y < floorY + minCameraHeight) {
+                    camera.position.y = floorY + minCameraHeight;
+                }
+                
+                // Render
+                renderer.render(scene, camera);
+            }
+            
+            // Start animation loop
+            animate();
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            
+            // Add click event to the document
+            document.addEventListener('click', playAudio);
+            
+            // Add click event to the renderer dom element for good measure
+            renderer.domElement.addEventListener('click', playAudio);
+            
+            // Add a visual indicator that audio can be played
+            const playPrompt = document.createElement('div');
+            playPrompt.style.position = 'absolute';
+            playPrompt.style.bottom = '20px';
+            playPrompt.style.left = '20px';
+            playPrompt.style.padding = '10px';
+            playPrompt.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            playPrompt.style.color = 'white';
+            playPrompt.style.borderRadius = '5px';
+            playPrompt.style.pointerEvents = 'none';  // Don't interfere with clicks
+            playPrompt.textContent = "Click to play audio";
+            document.body.appendChild(playPrompt);
+            
+            // Hide the prompt after audio starts playing
+            audioElement.addEventListener('play', function() {
+                playPrompt.style.display = 'none';
+            });
+        }
+    </script>
+</body>
+</html>
